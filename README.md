@@ -1,37 +1,86 @@
 # Smart-medical-kito
 Giving alert messageto the doctors ,family members and gaurdian
+import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+import time
+import smtplib
+from email.mime.text import MimeText
+from email.mime.multipart import MIMEMultipart
+import threading
 
-# Sample jobs data (expand with CSV)
-jobs = pd.DataFrame({
-    'Job Title': ['Software Developer', 'Data Analyst', 'Web Developer'],
-    'Key Skills': ['Python, SQL, ML', 'Excel, SQL, Visualization', 'HTML, CSS, JavaScript, React']
-})
-
-# User input example
-user_skills = "Python, Data Analysis"  # Candidate skills
-
-# TF-IDF vectorizer
-tfidf = TfidfVectorizer(stop_words='english')
-tfidf_matrix = tfidf.fit_transform(jobs['Key Skills'].tolist() + [user_skills])
-similarity = cosine_similarity(tfidf_matrix[-1:], tfidf_matrix[:-1])[0]
-
-# Matches
-matches = pd.DataFrame({'Similarity': similarity, 'Job': jobs['Job Title'], 'Skills': jobs['Key Skills']})
-matches = matches.sort_values('Similarity', ascending=False).head(3)
-
-# Prep notes dict (expand)
-prep_notes = {
-    'Software Developer': 'Practice LeetCode DSA, system design; review Python OOP.',
-    'Data Analyst': 'SQL queries, Tableau/PowerBI; case studies on cleaning data.',
-    'Web Developer': 'Build portfolio with React projects; CSS Flexbox/Grid.'
+# Thresholds (customize)
+THRESHOLDS = {
+    'Heart Rate (bpm)': (60, 100),
+    'Blood Pressure Sys (mmHg)': (90, 120),
+    'Temperature (°C)': (36, 38),
+    'SpO2 (%)': (95, 100)
 }
 
-print(matches)
-for idx, row in matches.iterrows():
-    job = row['Job']
-    print(f"\n{job}: Score {row['Similarity']:.2f}")
-    print(f"Prep Notes: {prep_notes.get(job, 'General resume tips.')}")
+# Recipients (add emails)
+RECIPIENTS = ['doctor@example.com', 'family@example.com', 'guardian@example.com']
+
+# Email config (use your Gmail)
+EMAIL = 'yourgmail@gmail.com'
+PASSWORD = 'your_app_password'  # Generate app password in Google settings
+
+def send_alert(patient_id, vitals):
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL
+    msg['To'] = ', '.join(RECIPIENTS)
+    msg['Subject'] = f'EMERGENCY: Patient {patient_id} Abnormal Vitals'
+    
+    body = f'Patient {patient_id} vitals abnormal:\n'
+    for vital, value in vitals.items():
+        body += f'{vital}: {value}\n'
+    
+    msg.attach(MimeText(body, 'plain'))
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL, PASSWORD)
+        text = msg.as_string()
+        server.sendmail(EMAIL, RECIPIENTS, text)
+        server.quit()
+        print("Alert sent!")
+    except Exception as e:
+        print(f"Email error: {e}")
+
+def check_emergency(vitals):
+    alerts = {}
+    for vital, (low, high) in THRESHOLDS.items():
+        value = vitals[vital]
+        if value < low or value > high:
+            alerts[vital] = value
+    return alerts
+
+# Streamlit App
+st.title("Patient Vital Monitor with Alerts")
+patient_id = st.text_input("Patient ID", "P001")
+
+if st.button("Start Monitoring"):
+    placeholder = st.empty()
+    alert_log = st.empty()
+    
+    for _ in range(100):  # Run 100 cycles
+        # Simulate vitals (replace with sensor read)
+        vitals = {
+            'Heart Rate (bpm)': np.random.normal(80, 10),
+            'Blood Pressure Sys (mmHg)': np.random.normal(110, 10),
+            'Temperature (°C)': np.random.normal(37, 0.5),
+            'SpO2 (%)': np.random.normal(98, 1)
+        }
+        
+        df = pd.DataFrame([vitals])
+        placeholder.dataframe(df)
+        
+        alerts = check_emergency(vitals)
+        if alerts:
+            alert_log.warning(f"🚨 Emergency for {patient_id}: {alerts}")
+            # Thread for non-blocking alert
+            threading.Thread(target=send_alert, args=(patient_id, alerts)).start()
+        else:
+            alert_log.success("Vitals normal.")
+        
+        time.sleep(2)  # 2s interval
